@@ -26,8 +26,8 @@ app.get('/test-benchmark-logging', async (req, res) => {   // > 100 ms execution
             { model: Reviewer }
         ],
         // Uncomment the lines below to see the data structure more clearly
-        // limit: 100,
-        // offset: 2000
+        limit: 100,
+        offset: 2000
     });
     res.json(books);
 });
@@ -36,14 +36,17 @@ app.get('/test-benchmark-logging', async (req, res) => {   // > 100 ms execution
 // STEP #1: Benchmark a Frequently-Used Query
 app.get('/books', async (req, res) => {
 
-    let books = await Book.findAll({
-        include: Author,
-    });
+    let queryOptions = { include: Author, };
 
     // Filter by price if there is a maxPrice defined in the query params
     if (req.query.maxPrice) {
-        books = books.filter(book => book.price < parseInt(req.query.maxPrice));
+        queryOptions.where = {
+            price: {
+                [Op.lt]: parseInt(req.query.maxPrice)
+            }
+        };
     };
+    let books = await Book.findAll(queryOptions);
     res.json(books);
 });
 
@@ -55,6 +58,9 @@ app.get('/books', async (req, res) => {
 
 
         // - What exactly is happening as SQL executes this query? 
+        /* The sql query is fetching all rows from the "books" table and joining with the "authors" table based on the foreign key relationship
+        it is not filtered by price at the database level but instead inside the node.js server.   THIS IS LESS EFFICIENT*/
+
  
 
 
@@ -62,6 +68,10 @@ app.get('/books', async (req, res) => {
 // 1b. Identify Opportunities to Make Query More Efficient
 
     // - What could make this query more efficient?
+    /* - filter the data at the database level 
+       - pagination
+       - select only necesary columns 
+    */
 
 
 // 1c. Refactor the Query in GET /books
@@ -74,12 +84,13 @@ app.get('/books', async (req, res) => {
 
     // Is the refactored query more efficient than the original? Why or Why Not?
 
-
+    // elapsed time went down from 135 ms to 61 ms
+    // by doing the operation at the database level we improved operation  efficiency by over 50%
 
 
 
 // STEP #2: Benchmark and Refactor Another Query
-app.patch('/authors/:authorId/books', async (req, res) => {
+/*app.patch('/authors/:authorId/books', async (req, res) => {
     const author = await Author.findOne({
         include: { model: Book },
         where: {
@@ -104,6 +115,29 @@ app.patch('/authors/:authorId/books', async (req, res) => {
             authorId: author.id
         }
     });
+
+    res.json({
+        message: `Successfully updated all authors.`,
+        books
+    });
+});*/
+
+app.patch('/authors/:authorId/books', async (req, res) => {
+    const authorId = req.params.authorId;
+    const newPrice = req.body.price;
+
+    const authorExists = await Author.findOne({
+        where: { id: authorId }
+    });
+
+    if (!authorExists) {
+        res.status(404);
+        return res.json({
+            message: "unable to find author with that Id"
+        });
+    }
+
+    await Book.update({ price: newPrice }, { where: { authorId } });
 
     res.json({
         message: `Successfully updated all authors.`,
